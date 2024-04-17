@@ -7,7 +7,7 @@ using DSP
 plotly()
 SYS_CLK=90E6
 F0 = 30E3
-t = 0:1/SYS_CLK:1/F0*120
+t = 0:1/SYS_CLK:1/F0*10
 
 function sinus_dds()
     tbl=UInt16[]
@@ -18,6 +18,48 @@ function sinus_dds()
     return tbl
 end
 sinus = sinus_dds()
+
+function sinus_index(time,f0)
+    stps=0
+    index_zero=0
+    for i in 2:1:length(time)
+        sin_val=sin(2*pi*time[i]*f0)
+        if  abs(sin_val) < 2E-15
+            if stps==1
+                index_zero=i-1
+                break
+            end
+            stps=stps+1
+        end
+    end
+    return index_zero
+end
+
+ind=sinus_index(t,F0)
+plot(t[1:ind],sin.(2*pi*F0*t[1:ind]))
+
+function generate_sinus(index,time,f0)
+    sinus=Float64[]
+    N=length(time)
+    for i in 1:N
+        if i>index && i!=N
+            cycle=round(Int,i/index,RoundDown)*index
+            if cycle == i
+                cycle=i-1
+            end
+            sample=sin(2*pi*f0*time[i-cycle])
+            push!(sinus,sample)
+        else
+            sample=sin(2*pi*f0*time[i])
+            push!(sinus,sample)
+        end
+        
+    end
+    return sinus
+end
+
+sinus_timed=generate_sinus(ind,t,F0)
+
 
 function pulse()
     tbl=UInt16[]
@@ -43,9 +85,9 @@ function DDS(SYS_CLK,F0,t,tb)
     for i in t
         addr=phase_accum>>8
         addr=addr+0x001
-        if addr == 0x0000
-            addr = 0x0001
-        end
+        # if addr == 0x0000
+        #     addr = 0x0001
+        # end
         signal = vcat(signal,tb_val[addr])
         phase_accum = phase_accum + incr
     end
@@ -121,7 +163,7 @@ response = Lowpass(F0, fs=SYS_CLK)
 designmethod = FIRWindow(hamming(length(sig)))
 LowFilter = digitalfilter(response, designmethod)
 
-sig=filt(sig,LowFilter)
+# sig=filt(sig,LowFilter)
 function upsample(x,order)
     ind_x=1:length(x)
     ind_y=1:length(x)*order
@@ -147,7 +189,7 @@ end
 
 signal=3.3/2*sin.(2*pi*F0*t)
 plot(sig)
-plot!(signal)
+plot!(3.3/2*sinus_timed)
 
 # Y1=fft(signal)
 # Y2=fft(sig)
