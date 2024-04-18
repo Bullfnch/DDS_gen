@@ -8,7 +8,7 @@ plotly()
 SYS_CLK=90E6
 F0 = 30E3
 T=1/F0
-t = 0:1/SYS_CLK:T*80
+t = 0:1/SYS_CLK:T*12
 
 function sinus_dds()
     tbl=UInt16[]
@@ -19,6 +19,7 @@ function sinus_dds()
     return tbl
 end
 sinus = sinus_dds()
+sinus_inv = sinus.*(-1).+4096
 
 function sinus_index(time,f0)
     stps=0
@@ -37,7 +38,7 @@ function sinus_index(time,f0)
 end
 
 ind=sinus_index(t,F0)
-plot(t[1:ind],sin.(2*pi*F0*t[1:ind]))
+# plot(t[1:ind],sin.(2*pi*F0*t[1:ind]))
 
 function generate_sinus(index,time,f0)
     sinus=Float64[]
@@ -59,7 +60,7 @@ function generate_sinus(index,time,f0)
     return sinus
 end
 
-sinus_timed=generate_sinus(ind,t,F0)
+# sinus_timed=generate_sinus(ind,t,F0)
 
 
 function pulse()
@@ -81,7 +82,7 @@ pls=pulse()
 
 function DDS(SYS_CLK,F0,t,tb)
     phase_accum = UInt32(0x0001)
-    incr = round(UInt32,2^32*F0/SYS_CLK,RoundDown)
+    incr = round(UInt32,2^32*F0/SYS_CLK,RoundUp)
     tb_val = tb
     signal = typeof(tb[1])[]
     for i in t
@@ -97,43 +98,51 @@ function DDS(SYS_CLK,F0,t,tb)
     return signal
 end
 
-function DDS_PSK2(SYS_CLK,F0,t,tb,sequence)
-    phase_accum = UInt16(0)
-    incr = UInt16(0)
-    incr = UInt16(round(2^16*F0/SYS_CLK))
-    tb_val = tb
+function DDS_PSK2(SYS_CLK,F0,t,tb1,tb2,sequence)
+    phase_accum = UInt32(0x0001)
+    incr = round(UInt32,2^32*F0/SYS_CLK,RoundUp)
+    tb_val_1 = tb1
+    tb_val_2 = tb2
+    tb_val = tb1
     signal = typeof(tb_val[1])[]
-    seq=repeat(sequence,inner=round(Int,length(t)/length(sequence)))
-    seq=seq[1:(length(seq)-(length(seq)-length(t)))]
-    flag=false;
-
-    for i in seq
-        if i == 1
-            addr=phase_accum>>8
-            if addr == 0x0000
-                addr = 0x0001
+    seq=typeof(sequence[1])[]
+    stps=0
+    ind=1
+    while length(seq)<length(t)
+        if stps == round(Int,SYS_CLK/F0*2)
+            stps = 0
+            ind = ind+1
+            if ind>length(sequence)
+                ind=1
             end
-            signal = vcat(signal,tb_val[addr])
-            phase_accum = phase_accum + incr
-            flag = true
+            push!(seq,sequence[ind])
         else
-
-            if flag == true
-                phase_accum = phase_accum + round(UInt16,typemax(typeof(phase_accum))/2)
-                flag == false
-            else
-                addr=phase_accum>>8
-                # if addr == 0x0000
-                #     addr = 0x0001
-                # end
-                signal = vcat(signal,tb_val[addr])
-                phase_accum = phase_accum + incr
+            if ind>length(sequence)
+                ind=1
             end
-
+            push!(seq,sequence[ind])
+            stps=stps+1
+        end
+    end
+    for i in 1:length(t)-1
+        
+        if (seq[i+1]-seq[i])!=0 && seq[i+1]==1
+            addr=phase_accum>>24
+            tb_val=tb_val_1
+            signal = vcat(signal,tb_val[addr+0x0001])
+            phase_accum = phase_accum + incr
+        elseif  (seq[i+1]-seq[i])!=0 && seq[i+1]==0
+            addr=phase_accum>>24
+            tb_val=tb_val_2
+            signal = vcat(signal,tb_val[addr+0x0001])
+            phase_accum = phase_accum + incr
+        else
+            addr=phase_accum>>24
+            signal = vcat(signal,tb_val[addr+0x0001])
+            phase_accum = phase_accum + incr
         end
     end
     return signal
-    
 end
 
 
@@ -150,6 +159,8 @@ function DDS_saw(SYS_CLK,F0,t)
 end
 seq=UInt16[1,0,1,1]
 
+bpsk=DDS_PSK2(SYS_CLK,F0,t,sinus,sinus_inv,[1,0,1,0,0,1])
+
 saw=DDS_saw(SYS_CLK,F0,t)
 saw=(saw*3.3/typemax(UInt8)).-3.3/2
 sig=DDS(SYS_CLK,F0,t,sinus)
@@ -157,7 +168,7 @@ sig = (sig*3.3/4096).-3.3/2
 
 meandr=DDS(SYS_CLK,F0,t,pls)
 
-mnd=mnd1
+mnd=[1,0]
 mnd=repeat(mnd,round(Int,t[end]/T))
 mnd=repeat(mnd,inner=round(Int,length(meandr)/length(mnd)))
 
@@ -195,15 +206,20 @@ end
 # saw=upsample(saw,10)
 
 signal=3.3/2*sin.(2*pi*F0*t)
+
+# plot(sig)
+
 # plot(sig)
 # plot!(3.3/2*sinus_timed)
 
-plot(meandr/255)
-plot!(mnd)
+# plot(meandr/255)
+# plot!(mnd)
 
 # Y1=fft(signal)
 # Y2=fft(sig)
-# G1=abs.(Y1)
-# G2=abs.(Y2)
+# G1=abs.(Y1)/length(Y1)
+# G2=abs.(Y2)/length(Y2)
 # plot(10*log.(G1))
 # plot!(10*log.(G2))
+
+plot(bpsk/4096)
