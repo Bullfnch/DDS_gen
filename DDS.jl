@@ -7,7 +7,8 @@ using DSP
 plotly()
 SYS_CLK=90E6
 F0 = 30E3
-t = 0:1/SYS_CLK:1/F0*10
+T=1/F0
+t = 0:1/SYS_CLK:T*80
 
 function sinus_dds()
     tbl=UInt16[]
@@ -77,18 +78,19 @@ end
 
 pls=pulse()
 
+
 function DDS(SYS_CLK,F0,t,tb)
-    phase_accum = UInt16(0x0001)
-    incr = round(UInt16,2^16*F0/SYS_CLK,RoundUp)
+    phase_accum = UInt32(0x0001)
+    incr = round(UInt32,2^32*F0/SYS_CLK,RoundDown)
     tb_val = tb
     signal = typeof(tb[1])[]
     for i in t
-        addr=phase_accum>>8
-        addr=addr+0x001
+        addr=phase_accum>>24
+        # println(addr)
         # if addr == 0x0000
         #     addr = 0x0001
         # end
-        signal = vcat(signal,tb_val[addr])
+        signal = vcat(signal,tb_val[addr+0x0001])
         phase_accum = phase_accum + incr
     end
     # println(incr)
@@ -152,7 +154,12 @@ saw=DDS_saw(SYS_CLK,F0,t)
 saw=(saw*3.3/typemax(UInt8)).-3.3/2
 sig=DDS(SYS_CLK,F0,t,sinus)
 sig = (sig*3.3/4096).-3.3/2
-# meandr=DDS(SYS_CLK,F0,t,pls)
+
+meandr=DDS(SYS_CLK,F0,t,pls)
+
+mnd=mnd1
+mnd=repeat(mnd,round(Int,t[end]/T))
+mnd=repeat(mnd,inner=round(Int,length(meandr)/length(mnd)))
 
 #y=fft(sig)
 #G=2*abs.(y)/length(y)
@@ -188,8 +195,11 @@ end
 # saw=upsample(saw,10)
 
 signal=3.3/2*sin.(2*pi*F0*t)
-plot(sig)
-plot!(3.3/2*sinus_timed)
+# plot(sig)
+# plot!(3.3/2*sinus_timed)
+
+plot(meandr/255)
+plot!(mnd)
 
 # Y1=fft(signal)
 # Y2=fft(sig)
