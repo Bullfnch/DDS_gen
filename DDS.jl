@@ -8,7 +8,7 @@ plotly()
 SYS_CLK=90E6
 F0 = 30E3
 T=1/F0
-t = 0:1/SYS_CLK:T*12
+t = 0:1/SYS_CLK:T
 
 function sinus_dds()
     tbl=UInt16[]
@@ -81,26 +81,34 @@ pls=pulse()
 
 
 function DDS(SYS_CLK,F0,t,tb)
+
     phase_accum = UInt32(0x0001)
-    incr = round(UInt32,2^32*F0/SYS_CLK,RoundUp)
+    incr = round(UInt32,2^32*F0/SYS_CLK)
+    println(incr)
     tb_val = tb
     signal = typeof(tb[1])[]
     for i in t
-        addr=phase_accum>>24
+        addr=phase_accum>>29
+        addr=addr+0x1
+        if addr>0x006
+            phase_accum=0x0001
+            addr=0x001
+        end
         # println(addr)
-        # if addr == 0x0000
-        #     addr = 0x0001
-        # end
-        signal = vcat(signal,tb_val[addr+0x0001])
+        signal = vcat(signal,tb_val[addr])
         phase_accum = phase_accum + incr
     end
-    # println(incr)
     return signal
+
 end
+
+seq=[1,0,1,0,0,1]
+
+cod=DDS(SYS_CLK,F0,t,seq)
 
 function DDS_PSK2(SYS_CLK,F0,t,tb1,tb2,sequence)
     phase_accum = UInt32(0x0001)
-    incr = round(UInt32,2^32*F0/SYS_CLK,RoundUp)
+    incr = round(UInt32,2^32*F0/SYS_CLK)
     tb_val_1 = tb1
     tb_val_2 = tb2
     tb_val = tb1
@@ -157,29 +165,31 @@ function DDS_saw(SYS_CLK,F0,t)
     end
     return signal
 end
-seq=UInt16[1,0,1,1]
 
-bpsk=DDS_PSK2(SYS_CLK,F0,t,sinus,sinus_inv,[1,0,1,0,0,1])
 
-saw=DDS_saw(SYS_CLK,F0,t)
-saw=(saw*3.3/typemax(UInt8)).-3.3/2
-sig=DDS(SYS_CLK,F0,t,sinus)
-sig = (sig*3.3/4096).-3.3/2
+# Блок генерации сигналов
 
-meandr=DDS(SYS_CLK,F0,t,pls)
+# bpsk=DDS_PSK2(SYS_CLK,F0,t,sinus,sinus_inv,[1,0,1,0,0,1])
 
-mnd=[1,0]
-mnd=repeat(mnd,round(Int,t[end]/T))
-mnd=repeat(mnd,inner=round(Int,length(meandr)/length(mnd)))
+# saw=DDS_saw(SYS_CLK,F0,t)
+# saw=(saw*3.3/typemax(UInt8)).-3.3/2
+# sig=DDS(SYS_CLK,F0,t,sinus)
+# sig = (sig*3.3/4096).-3.3/2
+
+# meandr=DDS(SYS_CLK,F0,t,pls)
+
+# mnd=[1,0]
+# mnd=repeat(mnd,round(Int,t[end]/T))
+# mnd=repeat(mnd,inner=round(Int,length(meandr)/length(mnd)))
 
 #y=fft(sig)
 #G=2*abs.(y)/length(y)
 #plot(sig)
 #plot(10*log.(10,G))
 ##
-response = Lowpass(F0, fs=SYS_CLK)
-designmethod = FIRWindow(hamming(length(sig)))
-LowFilter = digitalfilter(response, designmethod)
+# response = Lowpass(F0, fs=SYS_CLK)
+# designmethod = FIRWindow(hamming(length(sig)))
+# LowFilter = digitalfilter(response, designmethod)
 
 # sig=filt(sig,LowFilter)
 function upsample(x,order)
@@ -205,7 +215,7 @@ end
 
 # saw=upsample(saw,10)
 
-signal=3.3/2*sin.(2*pi*F0*t)
+# signal=3.3/2*sin.(2*pi*F0*t)
 
 # plot(sig)
 
@@ -222,4 +232,4 @@ signal=3.3/2*sin.(2*pi*F0*t)
 # plot(10*log.(G1))
 # plot!(10*log.(G2))
 
-plot(bpsk/4096)
+# plot(t[1:end-1],bpsk/4096)
