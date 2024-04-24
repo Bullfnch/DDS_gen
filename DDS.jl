@@ -6,14 +6,15 @@ using DSP
 
 plotly()
 SYS_CLK=90E6
-F0 = 30E3
+F0 = 20E6
 T=1/F0
-t = 0:1/SYS_CLK:T*12
+t = 0:1/SYS_CLK:T*100
 
 function sinus_dds()
     tbl=UInt16[]
-    for i in 1:256
-        s = round(UInt16,(sin(2*pi*(i-1)/256)+1)*(4095+1)/2,RoundDown)
+    N=1024
+    for i in 1:N
+        s = round(UInt16,(sin(2*pi*(i-1)/N)+1)*(4095+1)/2)
         push!(tbl,s)
     end
     return tbl
@@ -37,7 +38,7 @@ function sinus_index(time,f0)
     return index_zero
 end
 
-ind=sinus_index(t,F0)
+# ind=sinus_index(t,F0)
 # plot(t[1:ind],sin.(2*pi*F0*t[1:ind]))
 
 function generate_sinus(index,time,f0)
@@ -62,6 +63,27 @@ end
 
 # sinus_timed=generate_sinus(ind,t,F0)
 
+function upsample(x,order)
+    ind_x=1:length(x)
+    ind_y=1:length(x)*order
+    ind_y_x=1:order:length(x)*order
+    y=typeof(x[1])[]
+    id=1
+    stps=0
+    push!(y,x[id])
+    while length(y)<length(x)*order
+        if stps == order-1
+        push!(y,x[id])
+        stps = 0
+        id=id+1
+        else
+            push!(y,0)
+            stps = stps+1
+        end
+    end
+    return y
+end
+
 
 function pulse()
     tbl=UInt16[]
@@ -81,12 +103,12 @@ pls=pulse()
 
 
 function DDS(SYS_CLK,F0,t,tb)
-    phase_accum = UInt32(0x0001)
-    incr = round(UInt32,2^32*F0/SYS_CLK,RoundUp)
+    phase_accum = UInt32(0x0000)
+    incr = round(UInt32,(2^32-1)*F0/SYS_CLK)
     tb_val = tb
     signal = typeof(tb[1])[]
     for i in t
-        addr=phase_accum>>24
+        addr=phase_accum>>22
         # println(addr)
         # if addr == 0x0000
         #     addr = 0x0001
@@ -159,49 +181,28 @@ function DDS_saw(SYS_CLK,F0,t)
 end
 seq=UInt16[1,0,1,1]
 
-bpsk=DDS_PSK2(SYS_CLK,F0,t,sinus,sinus_inv,[1,0,1,0,0,1])
+# bpsk=DDS_PSK2(SYS_CLK,F0,t,sinus,sinus_inv,[1,0,1,0,0,1])
 
-saw=DDS_saw(SYS_CLK,F0,t)
-saw=(saw*3.3/typemax(UInt8)).-3.3/2
+# saw=DDS_saw(SYS_CLK,F0,t)
+# saw=(saw*3.3/typemax(UInt8)).-3.3/2
 sig=DDS(SYS_CLK,F0,t,sinus)
 sig = (sig*3.3/4096).-3.3/2
-
-meandr=DDS(SYS_CLK,F0,t,pls)
-
-mnd=[1,0]
-mnd=repeat(mnd,round(Int,t[end]/T))
-mnd=repeat(mnd,inner=round(Int,length(meandr)/length(mnd)))
-
-#y=fft(sig)
-#G=2*abs.(y)/length(y)
-#plot(sig)
-#plot(10*log.(10,G))
-##
-response = Lowpass(F0, fs=SYS_CLK)
-designmethod = FIRWindow(hamming(length(sig)))
+sig = upsample(sig,10)
+response = Lowpass(F0, fs=SYS_CLK*10)
+designmethod = Butterworth(6)
 LowFilter = digitalfilter(response, designmethod)
+sig=filt(LowFilter,sig)
+noise=randn(Float64,length(sig))
+noise_f=filt(LowFilter,noise)
+# meandr=DDS(SYS_CLK,F0,t,pls)
+
+# mnd=[1,0]
+# mnd=repeat(mnd,round(Int,t[end]/T))
+# mnd=repeat(mnd,inner=round(Int,length(meandr)/length(mnd)))
+
+
 
 # sig=filt(sig,LowFilter)
-function upsample(x,order)
-    ind_x=1:length(x)
-    ind_y=1:length(x)*order
-    ind_y_x=1:order:length(x)*order
-    y=typeof(x[1])[]
-    id=1
-    stps=0
-    push!(y,x[id])
-    while length(y)<length(x)*order
-        if stps == order-1
-        push!(y,x[id])
-        stps = 0
-        id=id+1
-        else
-            push!(y,0)
-            stps = stps+1
-        end
-    end
-    return y
-end
 
 # saw=upsample(saw,10)
 
@@ -222,4 +223,11 @@ signal=3.3/2*sin.(2*pi*F0*t)
 # plot(10*log.(G1))
 # plot!(10*log.(G2))
 
-plot(bpsk/4096)
+# plot(bpsk/4096)
+
+y=fft(sig)
+G=2*abs.(y)/length(y)
+f=0:SYS_CLK*10/length(y):(10*SYS_CLK-1)
+plot(f,20*log.(10,G))
+
+# plot(sig)
