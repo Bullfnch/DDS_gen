@@ -12,7 +12,7 @@ t = 0:1/SYS_CLK:T*100
 
 function sinus_dds()
     tbl=UInt16[]
-    N=1024
+    N=256
     for i in 1:N
         s = round(UInt16,(sin(2*pi*(i-1)/N)+1)*(4095+1)/2)
         push!(tbl,s)
@@ -108,7 +108,7 @@ function DDS(SYS_CLK,F0,t,tb)
     tb_val = tb
     signal = typeof(tb[1])[]
     for i in t
-        addr=phase_accum>>22
+        addr=phase_accum>>24
         # println(addr)
         # if addr == 0x0000
         #     addr = 0x0001
@@ -185,15 +185,20 @@ seq=UInt16[1,0,1,1]
 
 # saw=DDS_saw(SYS_CLK,F0,t)
 # saw=(saw*3.3/typemax(UInt8)).-3.3/2
+
 sig=DDS(SYS_CLK,F0,t,sinus)
+
 sig = (sig*3.3/4096).-3.3/2
-sig = upsample(sig,10)
+order=10
+sig = upsample(sig,order)
+# sig=repeat(sig,inner=order)
+
 response = Lowpass(F0, fs=SYS_CLK*10)
-designmethod = Butterworth(6)
+designmethod = Butterworth(7)
 LowFilter = digitalfilter(response, designmethod)
 sig=filt(LowFilter,sig)
-noise=randn(Float64,length(sig))
-noise_f=filt(LowFilter,noise)
+# noise=randn(Float64,length(sig))
+# noise_f=filt(LowFilter,noise)
 # meandr=DDS(SYS_CLK,F0,t,pls)
 
 # mnd=[1,0]
@@ -227,7 +232,7 @@ signal=3.3/2*sin.(2*pi*F0*t)
 
 y=fft(sig)
 G=2*abs.(y)/length(y)
-f=0:SYS_CLK*10/length(y):(10*SYS_CLK-1)
+f=0:SYS_CLK*order/length(y):(order*SYS_CLK-1)
 plot(f,20*log.(10,G))
 
 # plot(sig)
